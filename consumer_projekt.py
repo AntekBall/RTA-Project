@@ -7,25 +7,34 @@ TOPIC = "credit_applications"
 # Also we have to load model here
 
 def make_decision(client_data):
-    """Simple rule-based credit decision logic for testing"""
+    """Decision logic with A/B testing"""
     credit_score = client_data['credit_score']
     income = client_data['annual_income']
     dti = client_data['debt_to_income_ratio']
     
-    # simple decison process for now
-    # Change this with model
-    if credit_score >= 650 and dti <= 0.4:
-        return "APPROVED"
-    elif credit_score >= 600 and income > 50000 and dti <= 0.5:
-        return "APPROVED (MARGINAL)"
+    # Control group (A) - original rules
+    if client_data['experiment_group'] == "A":
+        if credit_score >= 650 and dti <= 0.4:
+            return "APPROVED"
+        elif credit_score >= 600 and income > 50000 and dti <= 0.5:
+            return "APPROVED (MARGINAL)"
+        else:
+            return "DENIED"
+    
+    # Test group (B) - relaxed rules for testing
     else:
-        return "DENIED"
+        if credit_score >= 620 and dti <= 0.45:
+            return "APPROVED"
+        elif credit_score >= 580 and income > 45000 and dti <= 0.55:
+            return "APPROVED (MARGINAL)"
+        else:
+            return "DENIED"
 
 if __name__ == "__main__":
     consumer = KafkaConsumer(
         TOPIC,
         bootstrap_servers=[SERVER],
-        auto_offset_reset='earliest',  
+        auto_offset_reset='latest',  
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
     

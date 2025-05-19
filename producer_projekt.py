@@ -10,9 +10,12 @@ TOPIC = "credit_applications"
 
 # This has to be changed to create clients based on the distribution of our dataset
 def generate_client():
-    """Generates synthetic client data for credit evaluation"""
+    """Generates synthetic client data with A/B testing groups"""
     client_id = f"CL{random.randint(10000, 99999)}"
     current_time = datetime.now()
+    
+    # Randomly assign to control (A) or test (B) group
+    experiment_group = random.choice(["A", "B"])
     
     return {
         "timestamp": str(current_time),
@@ -24,7 +27,8 @@ def generate_client():
         "employment_status": random.choice(["employed", "self-employed", "unemployed"]),
         "loan_amount": random.randint(5000, 50000),
         "loan_purpose": random.choice(["mortgage", "car", "education", "personal"]),
-        "default_history": random.randint(0, 3)
+        "default_history": random.randint(0, 3),
+        "experiment_group": experiment_group  
     }
 
 if __name__ == "__main__":
