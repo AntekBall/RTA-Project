@@ -86,12 +86,12 @@ def make_prediction(client_data, models):
         for model_name, model in models.items():
             prediction = model.predict(features)[0]
             prediction_proba = model.predict_proba(features)[0]
-            if prediction == 1:
+            if prediction == 0:
                 decision = "APPROVED"
-                confidence = prediction_proba[1]
+                confidence = prediction_proba[0]
             else:
                 decision = "DENIED"
-                confidence = prediction_proba[0]
+                confidence = prediction_proba[1]
             results[model_name] = {
                 "decision": decision,
                 "confidence": confidence,
@@ -124,7 +124,7 @@ def display_client_info(client_data, results):
             if model_name != "actual_target":
                 print(f"\n{model_name.upper()}:")
                 print(f"  - Model decision: {result['decision']}")
-                print(f"  - Actual target: {'APPROVED' if actual_target else 'DENIED'}")
+                print(f"  - Actual target: {'APPROVED' if not actual_target else 'DENIED'}")
                 print(f"  - Confidence: {result['confidence']:.4f}")
                 print(f"  - Probability [Deny, Approve]: {result['prediction_proba']}")
     print("="*60 + "\n")

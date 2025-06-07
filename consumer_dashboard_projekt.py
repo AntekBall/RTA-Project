@@ -105,12 +105,12 @@ def make_prediction(client_data, models):
         for model_name, model in models.items():
             prediction = model.predict(features)[0]
             prediction_proba = model.predict_proba(features)[0]
-            if prediction == 1:
+            if prediction == 0:
                 decision = "APPROVED"
-                confidence = prediction_proba[1]
+                confidence = prediction_proba[0]
             else:
                 decision = "DENIED"
-                confidence = prediction_proba[0]
+                confidence = prediction_proba[1]
             results[model_name] = {
                 "decision": decision,
                 "confidence": confidence,
@@ -124,7 +124,6 @@ def make_prediction(client_data, models):
 
 
 ############################ REAL-TIME DATA FOR DASHBOARD  ############################
-
 class DashboardData:
     def __init__(self):
         self.decisions = []
@@ -199,18 +198,40 @@ def consume_messages():
 
 ############################ DASH APP SETUP  ############################
 
+colors = {
+    'background': '#242424',
+    'text': '#7FDBFF',
+    'model_A': '#7FDBFF',
+    'model_B': '#98FBCB'
+}
+
 app = dash.Dash(__name__)
-app.layout = html.Div([
-    html.H1("Credit Decisions Dashboard"),
+app.layout = html.Div(
+    style={
+        'backgroundColor': colors['background'],
+        'fontFamily': 'Arial, sans-serif',
+        'padding': '20px'
+    },
+    children=[
+        html.H1(
+            "Credit Decisions Dashboard",
+            style={
+                "font-family": "Arial, sans-serif",
+                "font-size": "36px",
+                "text-align": "center",
+                "color": colors['text']
+            }
+        ),
 
-    dcc.Graph(id='experiment-results'),
-    dcc.Graph(id='approval-by-time'),
-    dcc.Graph(id='roc'),
-    dcc.Graph(id='confusion-matrix'),
-    dcc.Graph(id='income-distribution'),
+        dcc.Graph(id='experiment-results'),
+        dcc.Graph(id='approval-by-time'),
+        dcc.Graph(id='confusion-matrix'),
+        dcc.Graph(id='income-distribution'),
 
-    dcc.Interval(id='refresh', interval=2000)
-])
+        dcc.Interval(id='refresh', interval=2000)
+    ]
+)
+
 
 # @app.callback(
 #     Output('live-pie', 'figure'),
@@ -248,11 +269,21 @@ def update_experiment_results(_):
         exp_data = data_store.experiment_results
 
     if df.empty:
-        return px.bar(
+        fig=px.bar(
             pd.DataFrame(columns=["Group", "Decision", "Count"]),
-            x="Group", y="Count", color="Decision",
-            title="Waiting for experiment data..."
+            x="Group",
+            y="Count",
+            color="Decision",
+            barmode="stack",
+            title="Waiting for experiment data...",
+            labels={'Group': 'Model Variant', 'Count': '', 'decision': 'Decision'}
+            )
+        fig.update_layout(
+            plot_bgcolor=colors['background'],
+            paper_bgcolor=colors['background'],
+            font_color=colors['text']
         )
+        return fig
 
     exp_df = pd.DataFrame([
         {"Group": "A", "Decision": "APPROVED", "Count": exp_data["A"]["APPROVED"]},
@@ -261,16 +292,22 @@ def update_experiment_results(_):
         {"Group": "B", "Decision": "DENIED", "Count": exp_data["B"]["DENIED"]}
     ])
 
-    return px.bar(
+    fig = px.bar(
         exp_df,
         x="Group",
         y="Count",
         color="Decision",
         barmode="stack",
-        title="Approval Rate by Decision (Stacked)",
-        color_discrete_map={"APPROVED": "#0d585f", "DENIED": "#e1a36f"}
-        # color_discrete_map={"APPROVED": "green", "DENIED": "red"}
+        title="Approval and Denial Outcomes by Model Variant",
+        labels={'Group': 'Model Variant', 'Count': '', 'decision': 'Decision'},
+        color_discrete_map={"APPROVED": colors['model_A'], "DENIED": colors['model_B']}
     )
+    fig.update_layout(
+        plot_bgcolor=colors['background'],
+        paper_bgcolor=colors['background'],
+        font_color=colors['text']
+    )
+    return fig
 
 
 @app.callback(
@@ -287,64 +324,94 @@ def update_approval_by_time(_):
         cum_counts_long = cum_counts.reset_index().melt(id_vars='timestamp', var_name='decision', value_name='cum_count')
 
     if df.empty:
-        return px.line(
-            cum_counts_long,
+        fig=px.line(
+            pd.DataFrame(columns=["timestamp", "cum_count", "decision"]),
             x='timestamp',
+            y='cum_count',
             color='decision',
-            markers=True,  # punkty na linii, opcjonalnie
+            markers=False,  # punkty na linii, opcjonalnie
             labels={'timestamp': 'Czas', 'cum_count': 'Skumulowana liczba decyzji', 'decision': 'Decyzja'},
             title="Waiting for data..."
         )
+        fig.update_layout(
+            plot_bgcolor=colors['background'],
+            paper_bgcolor=colors['background'],
+            font_color=colors['text']
+        )
+        return fig
 
-    return px.line(
+    color_map = {
+        'APPROVED': colors['model_B'],
+        'DENIED': colors['model_A']
+    }
+
+    fig=px.line(
         cum_counts_long,
         x='timestamp',
         y='cum_count',
         color='decision',
         markers=True,  # punkty na linii, opcjonalnie
-        labels={'timestamp': 'Czas', 'cum_count': 'Skumulowana liczba decyzji', 'decision': 'Decyzja'},
-        title='Skumulowana liczba decyzji w czasie'
+        labels={'timestamp': 'Date & time', 'cum_count': 'Cumulative Number of Decisions', 'decision': 'Decision'},
+        color_discrete_map=color_map,
+        title='Cumulative Number of Decisions Over Time by Outcome'
     )
+    fig.update_layout(
+        plot_bgcolor=colors['background'],
+        paper_bgcolor=colors['background'],
+        font_color=colors['text']
+    )
+    return fig
 
 
-@app.callback(
-    Output('roc', 'figure'),
-    Input('refresh', 'n_intervals')
-)
-def update_roc(_):
-    with data_store.lock:
-        df = pd.DataFrame(data_store.decisions or [])
-        df['y_true'] = df['actual_decision'].map({'APPROVED': 1, 'DENIED': 0})
-        df['y_pred'] = df['decision'].map({'APPROVED': 1, 'DENIED': 0})
-        roc_rows = []
+# @app.callback(
+#     Output('roc', 'figure'),
+#     Input('refresh', 'n_intervals')
+# )
+# def update_roc(_):
+#     with data_store.lock:
+#         df = pd.DataFrame(data_store.decisions or [])
+#         df['y_true'] = df['actual_decision'].map({'APPROVED': 1, 'DENIED': 0})
+#         df['y_pred'] = df['decision'].map({'APPROVED': 1, 'DENIED': 0})
+#         roc_rows = []
 
-        for group in ['A', 'B']:
-            df_group = df[df['experiment_group'] == group]
-            fpr, tpr, _ = roc_curve(df_group['y_true'], df_group['y_pred'])
+#         for group in ['A', 'B']:
+#             df_group = df[df['experiment_group'] == group]
+#             fpr, tpr, _ = roc_curve(df_group['y_true'], df_group['y_pred'])
         
-            for fp, tp in zip(fpr, tpr):
-                roc_rows.append({'fpr': fp, 'tpr': tp, 'experiment_group': group})
+#             for fp, tp in zip(fpr, tpr):
+#                 roc_rows.append({'fpr': fp, 'tpr': tp, 'experiment_group': group})
 
-        roc_df = pd.DataFrame(roc_rows)
+#         roc_df = pd.DataFrame(roc_rows)
     
-    if df.empty:
-        return px.line(
-            roc_df,
-            x='fpr',
-            color='experiment_group',
-            title="Waiting for data...",
-            labels={'fpr': 'False Positive Rate (FPR)', 'tpr': 'True Positive Rate (TPR)', 'experiment_group': 'Grupa'}
-        )
+#     if df.empty:
+#         fig=px.line(
+#             roc_df,
+#             x='fpr',
+#             color='experiment_group',
+#             title="Waiting for data...",
+#             labels={'fpr': 'False Positive Rate (FPR)', 'tpr': 'True Positive Rate (TPR)', 'experiment_group': 'Grupa'}
+#         )
+#         fig.update_layout(
+#             plot_bgcolor=colors['background'],
+#             paper_bgcolor=colors['background'],
+#             font_color=colors['text']
+#         )
+#         return fig
 
-    return px.line(
-        roc_df,
-        x='fpr',
-        y='tpr',
-        color='experiment_group',
-        # color_discrete_map={"A": "#0d585f", "DENIED": "#e1a36f"}, #577e89
-        title='Krzywa ROC dla grup A i B',
-        labels={'fpr': 'False Positive Rate (FPR)', 'tpr': 'True Positive Rate (TPR)', 'experiment_group': 'Grupa'}
-    )
+#     fig=px.line(
+#         roc_df,
+#         x='fpr',
+#         y='tpr',
+#         color='experiment_group',
+#         title='Krzywa ROC dla grup A i B',
+#         labels={'fpr': 'False Positive Rate (FPR)', 'tpr': 'True Positive Rate (TPR)', 'experiment_group': 'Grupa'}
+#     )
+#     fig.update_layout(
+#         plot_bgcolor=colors['background'],
+#         paper_bgcolor=colors['background'],
+#         font_color=colors['text']
+#     )
+#     return fig
 
 
 @app.callback(
@@ -356,12 +423,17 @@ def update_confusion_matrix(_):
         df = pd.DataFrame(data_store.decisions or [])
 
     if df.empty:
-        # Pusta macierz
         empty_df = pd.DataFrame(columns=['Actual', 'Predicted', 'Count', 'experiment_group'])
-        return px.imshow(
+        fig=px.imshow(
             empty_df.pivot(index='Actual', columns='Predicted', values='Count'),
             title='Waiting for data...'
         )
+        fig.update_layout(
+            plot_bgcolor=colors['background'],
+            paper_bgcolor=colors['background'],
+            font_color=colors['text']
+        )
+        return fig
 
     # Zakodowanie binarne
     df['y_true'] = df['actual_decision'].map({'APPROVED': 1, 'DENIED': 0})
@@ -372,14 +444,14 @@ def update_confusion_matrix(_):
         cm = confusion_matrix(group_df['y_true'], group_df['y_pred'], labels=[1, 0])
         cm_df = pd.DataFrame(
             cm,
-            index=['Actual APPROVED', 'Actual DENIED'],
+            # index=['Actual APPROVED', 'Actual DENIED'],
+            index=['Actual DEFAULT', 'Actual NON-DEFAULT'],
             columns=['Pred APPROVED', 'Pred DENIED']
         ).reset_index().melt(id_vars='index', var_name='Predicted', value_name='Count')
         cm_df.rename(columns={'index': 'Actual'}, inplace=True)
         cm_df['experiment_group'] = group_label
         return cm_df
 
-    # Połącz dane z obu grup
     cm_a = prepare_cm_df('A')
     cm_b = prepare_cm_df('B')
     cm_all = pd.concat([cm_a, cm_b], ignore_index=True)
@@ -394,9 +466,20 @@ def update_confusion_matrix(_):
         facet_col_wrap=2,
         color_continuous_scale='mint',
         text_auto=True,
-        title='Confusion Matrix per Experiment Group'
+        title='Confusion Matrix per Experiment Group',
+        labels={'Predicted': '', 'Actual': ''}
     )
 
+    for annotation in fig.layout.annotations:
+        if annotation.text == 'experiment_group=A':
+            annotation.text = 'Model A'
+        elif annotation.text == 'experiment_group=B':
+            annotation.text = 'Model B'
+    fig.update_layout(
+        plot_bgcolor=colors['background'],
+        paper_bgcolor=colors['background'],
+        font_color=colors['text']
+    )
     return fig
 
 @app.callback(
@@ -408,13 +491,19 @@ def update_income_distribution(_):
         df = pd.DataFrame(data_store.decisions or [])
 
     if df.empty:
-        return px.histogram(
+        fig=px.histogram(
             pd.DataFrame(columns=['income', 'decision', 'experiment_group']),
             x="income", color="decision",
             title="Waiting for data..."
         )
+        fig.update_layout(
+            plot_bgcolor=colors['background'],
+            paper_bgcolor=colors['background'],
+            font_color=colors['text']
+        )
+        return fig
 
-    return px.histogram(
+    fig=px.histogram(
         df,
         x='income',
         color='decision',
@@ -422,10 +511,24 @@ def update_income_distribution(_):
         nbins=30,
         barmode='overlay',
         opacity=0.6,
-        # color_discrete_map={"APPROVED": "green", "DENIED": "red"},
-        color_discrete_map={"APPROVED": "#0d585f", "DENIED": "#e1a36f"}, #577e89
-        title="Income Distribution by Decision and Experiment Group"
+        color_discrete_map={"APPROVED": colors['model_A'], "DENIED": colors['model_B']},
+        title="Income Distribution by Decision and Experiment Group",
+        labels={'income': 'Income', 'decision': 'Decision'}
     )
+
+    fig.update_yaxes(title_text="")
+
+    for annotation in fig.layout.annotations:
+        if annotation.text == 'experiment_group=A':
+            annotation.text = 'Model A'
+        elif annotation.text == 'experiment_group=B':
+            annotation.text = 'Model B'
+    fig.update_layout(
+        plot_bgcolor=colors['background'],
+        paper_bgcolor=colors['background'],
+        font_color=colors['text']
+    )
+    return fig
 
 
 if __name__ == '__main__':
