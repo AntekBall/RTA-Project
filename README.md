@@ -20,3 +20,6 @@ The goal of the project is to compare two classification models (XGBoost and Ran
   * Confusion matrices separated by model.
   * Distribution of client incomes depending on the decision and model.
 * **A/B Experiment** — analysis of results from both models as two variants of the experiment.
+
+
+## Link to short presentation: https://drive.google.com/file/d/1DCH4TRnzUd9165AqAhHBJY6RwEwisKw9/view?usp=sharing
